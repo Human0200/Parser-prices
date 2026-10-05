@@ -1,0 +1,16 @@
+.git
+.kilo
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.venv
+venv
+*.md
+tests
+.cursor
+*.log
+celerybeat-schedule

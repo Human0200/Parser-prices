@@ -7,7 +7,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.product import Marketplace, PriceHistory, TrackedProduct
-from app.models.user import SubscriptionPlan, User
+from app.models.user import User
 from app.parsers.base import ParsedProduct
 from app.services.price_service import PriceService
 
@@ -49,30 +49,6 @@ class TestAddProduct:
         assert product.current_price == Decimal("3990.00")
         assert product.marketplace == Marketplace.WILDBERRIES
         assert product.user_id == test_user.id
-
-    @pytest.mark.asyncio
-    async def test_add_product_limit_reached(
-        self, db_session: AsyncSession, test_user: User,
-    ) -> None:
-        for i in range(5):
-            p = TrackedProduct(
-                user_id=test_user.id,
-                marketplace=Marketplace.WILDBERRIES,
-                external_id=f"limit_{i}",
-                url=f"https://www.wildberries.ru/catalog/limit_{i}/detail.aspx",
-                title=f"Limit Product {i}",
-                is_active=True,
-            )
-            db_session.add(p)
-        await db_session.flush()
-
-        service = PriceService(db_session)
-
-        with pytest.raises(ValueError, match="Product limit reached"):
-            await service.add_product(
-                test_user,
-                "https://www.wildberries.ru/catalog/99999999/detail.aspx",
-            )
 
     @pytest.mark.asyncio
     async def test_add_product_unsupported_marketplace(
@@ -345,17 +321,10 @@ class TestGetPriceTrend:
 class TestCanAddProduct:
 
     @pytest.mark.asyncio
-    async def test_can_add_product_free_plan_under_limit(
+    async def test_can_add_product_always_allowed(
         self, db_session: AsyncSession, test_user: User,
     ) -> None:
-        service = PriceService(db_session)
-        assert await service.can_add_product(test_user) is True
-
-    @pytest.mark.asyncio
-    async def test_cannot_add_product_free_plan_at_limit(
-        self, db_session: AsyncSession, test_user: User,
-    ) -> None:
-        for i in range(5):
+        for i in range(10):
             p = TrackedProduct(
                 user_id=test_user.id,
                 marketplace=Marketplace.WILDBERRIES,
@@ -363,40 +332,6 @@ class TestCanAddProduct:
                 url=f"https://www.wildberries.ru/catalog/cancheck_{i}/detail.aspx",
                 title=f"Limit Product {i}",
                 is_active=True,
-            )
-            db_session.add(p)
-        await db_session.flush()
-
-        service = PriceService(db_session)
-        assert await service.can_add_product(test_user) is False
-
-    @pytest.mark.asyncio
-    async def test_can_add_product_basic_plan_higher_limit(
-        self, db_session: AsyncSession,
-    ) -> None:
-        basic_user = User(
-            telegram_id=999999,
-            first_name="Basic",
-            subscription_plan=SubscriptionPlan.BASIC,
-        )
-        db_session.add(basic_user)
-        await db_session.flush()
-
-        service = PriceService(db_session)
-        assert await service.can_add_product(basic_user) is True
-
-    @pytest.mark.asyncio
-    async def test_inactive_products_not_counted(
-        self, db_session: AsyncSession, test_user: User,
-    ) -> None:
-        for i in range(5):
-            p = TrackedProduct(
-                user_id=test_user.id,
-                marketplace=Marketplace.WILDBERRIES,
-                external_id=f"inactive_count_{i}",
-                url=f"https://www.wildberries.ru/catalog/inactive_count_{i}/detail.aspx",
-                title=f"Inactive Count {i}",
-                is_active=False,
             )
             db_session.add(p)
         await db_session.flush()

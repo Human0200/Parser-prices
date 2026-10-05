@@ -69,12 +69,20 @@ class Settings(BaseSettings):
     YUKASSA_SHOP_ID: str
     YUKASSA_SECRET_KEY: str
 
-    # ---- Parsing cadence (free / basic / pro tiers) ----
-    PARSE_INTERVAL_FREE: int = 7200      # 2 hours
-    PARSE_INTERVAL_BASIC: int = 1800     # 30 minutes
-    PARSE_INTERVAL_PRO: int = 900        # 15 minutes
+    # ---- Parsing cadence (same for all users) ----
+    PARSE_INTERVAL: int = 900  # 15 minutes
+    # Legacy aliases kept for .env compatibility
+    PARSE_INTERVAL_FREE: int = 7200
+    PARSE_INTERVAL_BASIC: int = 1800
+    PARSE_INTERVAL_PRO: int = 900
 
     PROXY_LIST: str = ""
+
+    # Optional browser cookies for marketplace antibot (e.g. Ozon abt_data=...)
+    OZON_COOKIES: str = ""
+    # Wildberries Cookie / Authorization from browser (may help with 498/antibot)
+    WB_COOKIES: str = ""
+    WB_AUTHORIZATION: str = ""
 
     # ---- App-level ----
     # No default. Used to sign session cookies — a predictable value

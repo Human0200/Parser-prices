@@ -25,6 +25,9 @@ class RuleType(str, enum.Enum):
     PRICE_BELOW = "price_below"
     PRICE_ABOVE = "price_above"
     BACK_IN_STOCK = "back_in_stock"
+    CATEGORY_MIN_DROP = "category_min_drop"
+    CATEGORY_PRICE_BELOW = "category_price_below"
+    CATEGORY_NEW_SKU = "category_new_sku"
 
 
 class AlertRule(Base):
@@ -37,7 +40,16 @@ class AlertRule(Base):
     product_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("tracked_products.id", ondelete="CASCADE"), nullable=True
     )
-    rule_type: Mapped[RuleType] = mapped_column(Enum(RuleType), nullable=False)
+    category_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("tracked_categories.id", ondelete="CASCADE"), nullable=True
+    )
+    rule_type: Mapped[RuleType] = mapped_column(
+        Enum(
+            RuleType,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+    )
     threshold_value: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 2), nullable=True
     )
@@ -48,6 +60,9 @@ class AlertRule(Base):
 
     user: Mapped["User"] = relationship(back_populates="alert_rules")  # noqa: F821
     product: Mapped["TrackedProduct | None"] = relationship(  # noqa: F821
+        back_populates="alert_rules"
+    )
+    category: Mapped["TrackedCategory | None"] = relationship(  # noqa: F821
         back_populates="alert_rules"
     )
     logs: Mapped[list["AlertLog"]] = relationship(
@@ -62,8 +77,11 @@ class AlertLog(Base):
     alert_rule_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("alert_rules.id", ondelete="CASCADE"), nullable=False
     )
-    product_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("tracked_products.id", ondelete="CASCADE"), nullable=False
+    product_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("tracked_products.id", ondelete="CASCADE"), nullable=True
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("tracked_categories.id", ondelete="CASCADE"), nullable=True
     )
     old_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     new_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -76,4 +94,5 @@ class AlertLog(Base):
     )
 
     alert_rule: Mapped["AlertRule"] = relationship(back_populates="logs")
-    product: Mapped["TrackedProduct"] = relationship()  # noqa: F821
+    product: Mapped["TrackedProduct | None"] = relationship()  # noqa: F821
+    category: Mapped["TrackedCategory | None"] = relationship()  # noqa: F821

@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 import structlog
@@ -10,6 +9,7 @@ from app.database import async_session_factory
 from app.models.product import TrackedProduct
 from app.services.alert_service import AlertService
 from app.services.price_service import PriceService
+from app.tasks.async_utils import run_async
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger()
@@ -113,7 +113,7 @@ async def _check_all_alerts() -> dict:
 
 @celery_app.task(name="app.tasks.alerts.check_all_alerts")
 def check_all_alerts() -> dict:
-    return asyncio.run(_check_all_alerts())
+    return run_async(_check_all_alerts())
 
 
 async def _send_unsent_alerts() -> dict:
@@ -154,4 +154,4 @@ async def _send_unsent_alerts() -> dict:
 
 @celery_app.task(name="app.tasks.alerts.send_unsent_alerts")
 def send_unsent_alerts() -> dict:
-    return asyncio.run(_send_unsent_alerts())
+    return run_async(_send_unsent_alerts())

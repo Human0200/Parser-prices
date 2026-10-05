@@ -22,11 +22,154 @@ def _fmt_price(value) -> str:
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     return _build_markup(
         [
-            [InlineKeyboardButton(text="\U0001f50d \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0442\u043e\u0432\u0430\u0440", callback_data="add_product")],
-            [InlineKeyboardButton(text="\U0001f4ca \u041c\u043e\u0438 \u0442\u043e\u0432\u0430\u0440\u044b", callback_data="my_products")],
-            [InlineKeyboardButton(text="\U0001f514 \u041d\u0430\u0441\u0442\u0440\u043e\u0438\u0442\u044c \u0430\u043b\u0435\u0440\u0442\u044b", callback_data="alerts_settings")],
-            [InlineKeyboardButton(text="\U0001f4b3 \u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0430", callback_data="subscription")],
-            [InlineKeyboardButton(text="\u2753 \u041f\u043e\u043c\u043e\u0449\u044c", callback_data="help")],
+            [InlineKeyboardButton(text="🔍 Добавить товар", callback_data="add_product")],
+            [InlineKeyboardButton(text="📂 Мои категории", callback_data="my_categories")],
+            [InlineKeyboardButton(text="📊 Мои товары", callback_data="my_products")],
+            [InlineKeyboardButton(text="🔔 Настроить алерты", callback_data="alerts_settings")],
+            [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
+        ]
+    )
+
+
+def category_actions_keyboard(category_id: int) -> InlineKeyboardMarkup:
+    return _build_markup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="🔔 Алерты категории",
+                    callback_data=f"category_alerts:{category_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 Обновить выдачу",
+                    callback_data=f"refresh_category:{category_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 Удалить",
+                    callback_data=f"delete_category:{category_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ Назад",
+                    callback_data="my_categories",
+                ),
+            ],
+        ]
+    )
+
+
+def category_alert_type_keyboard(category_id: int) -> InlineKeyboardMarkup:
+    return _build_markup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="📉 Падение мин. цены",
+                    callback_data=f"cat_alert_min_drop:{category_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🎯 Дешевле своей цены",
+                    callback_data=f"cat_alert_below:{category_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🆕 Новый товар в выдаче",
+                    callback_data=f"cat_alert_new_sku:{category_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ Назад",
+                    callback_data=f"category_detail:{category_id}",
+                ),
+            ],
+        ]
+    )
+
+
+CATEGORIES_PER_PAGE: int = 5
+
+
+def _category_list_label(category) -> str:
+    """Telegram inline button text is limited to 64 characters."""
+    price = _fmt_price(category.min_price)
+    title = (getattr(category, "title", None) or "Категория").strip()
+    product = (getattr(category, "min_price_title", None) or "").strip()
+
+    if product:
+        suffix = f" — {price}"
+        mid = " · "
+        budget = 64 - len(suffix) - len(mid)
+        if budget < 8:
+            label = f"{product} — {price}"
+            return label if len(label) <= 64 else f"{product[: 64 - len(suffix) - 1]}…{suffix}"
+        title_budget = min(16, max(6, budget // 3))
+        product_budget = budget - title_budget
+        short_title = title if len(title) <= title_budget else f"{title[: title_budget - 1]}…"
+        short_product = (
+            product if len(product) <= product_budget else f"{product[: product_budget - 1]}…"
+        )
+        return f"{short_title}{mid}{short_product}{suffix}"
+
+    label = f"{title} — мин. {price}"
+    return label if len(label) <= 64 else f"{title[: 64 - len(f' — мин. {price}') - 1]}… — мин. {price}"
+
+
+def categories_pagination_keyboard(
+    categories: list,
+    page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    buttons: list[list[InlineKeyboardButton]] = []
+    start = page * CATEGORIES_PER_PAGE
+    end = start + CATEGORIES_PER_PAGE
+    for category in categories[start:end]:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=_category_list_label(category),
+                    callback_data=f"category_detail:{category.id}",
+                )
+            ]
+        )
+
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(text="◀️", callback_data=f"categories_page:{page - 1}")
+        )
+    if page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(text="▶️", callback_data=f"categories_page:{page + 1}")
+        )
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append(
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    )
+    return _build_markup(buttons)
+
+
+def confirm_delete_category_keyboard(category_id: int) -> InlineKeyboardMarkup:
+    return _build_markup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="✅ Да, удалить",
+                    callback_data=f"confirm_delete_category:{category_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data=f"category_detail:{category_id}",
+                ),
+            ],
         ]
     )
 

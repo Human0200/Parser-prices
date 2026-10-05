@@ -9,9 +9,9 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.bot.handlers.alerts import router as alerts_router
+from app.bot.handlers.categories import router as categories_router
 from app.bot.handlers.products import router as products_router
 from app.bot.handlers.start import router as start_router
-from app.bot.handlers.subscription import router as subscription_router
 from app.bot.middlewares import ThrottleMiddleware, UserMiddleware
 from app.config import settings
 
@@ -36,8 +36,8 @@ async def main() -> None:
 
     dp.include_router(start_router)
     dp.include_router(products_router)
+    dp.include_router(categories_router)
     dp.include_router(alerts_router)
-    dp.include_router(subscription_router)
 
     try:
         logger.info("bot_polling_started")

@@ -17,24 +17,30 @@ class SubscriptionPlan(str, enum.Enum):
     PRO = "pro"
 
 
+# Soft/legacy limits — not enforced. Kept for DB/UI compatibility.
+UNLIMITED = 10**9
+
 PLAN_LIMITS = {
     SubscriptionPlan.FREE: {
-        "max_products": 5,
-        "max_alerts": 3,
-        "max_marketplaces": 1,
-        "history_days": 7,
-        "csv_export": False,
+        "max_products": UNLIMITED,
+        "max_categories": UNLIMITED,
+        "max_alerts": UNLIMITED,
+        "max_marketplaces": 3,
+        "history_days": 90,
+        "csv_export": True,
     },
     SubscriptionPlan.BASIC: {
-        "max_products": 50,
-        "max_alerts": 20,
+        "max_products": UNLIMITED,
+        "max_categories": UNLIMITED,
+        "max_alerts": UNLIMITED,
         "max_marketplaces": 3,
-        "history_days": 30,
+        "history_days": 90,
         "csv_export": True,
     },
     SubscriptionPlan.PRO: {
-        "max_products": 200,
-        "max_alerts": 999999,
+        "max_products": UNLIMITED,
+        "max_categories": UNLIMITED,
+        "max_alerts": UNLIMITED,
         "max_marketplaces": 3,
         "history_days": 90,
         "csv_export": True,
@@ -52,12 +58,17 @@ class User(Base):
     telegram_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_name: Mapped[str] = mapped_column(String(255), nullable=False)
     subscription_plan: Mapped[SubscriptionPlan] = mapped_column(
-        Enum(SubscriptionPlan), default=SubscriptionPlan.FREE, nullable=False
+        Enum(
+            SubscriptionPlan,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        default=SubscriptionPlan.FREE,
+        nullable=False,
     )
     subscription_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    max_tracked_products: Mapped[int] = mapped_column(Integer, default=5)
+    max_tracked_products: Mapped[int] = mapped_column(Integer, default=UNLIMITED)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -66,6 +77,9 @@ class User(Base):
     )
 
     tracked_products: Mapped[list["TrackedProduct"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    tracked_categories: Mapped[list["TrackedCategory"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
     alert_rules: Mapped[list["AlertRule"]] = relationship(  # noqa: F821

@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import (
 from app.database import Base
 from app.models.user import SubscriptionPlan, User
 from app.models.product import Marketplace, TrackedProduct
+from app.models.category import CategorySnapshot, TrackedCategory  # noqa: F401
+from app.models.alert import AlertLog, AlertRule  # noqa: F401
 
 
 @pytest.fixture(scope="session")

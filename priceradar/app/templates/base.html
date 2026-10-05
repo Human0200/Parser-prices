@@ -14,7 +14,7 @@
             <a href="/dashboard" class="logo">PriceRadar</a>
             <div class="nav-right">
                 {% if user %}
-                <span class="user-info">{{ user.first_name }} ({{ user.subscription_plan.value }})</span>
+                <span class="user-info">{{ user.first_name }}</span>
                 {% else %}
                 <div id="telegram-login"></div>
                 {% endif %}

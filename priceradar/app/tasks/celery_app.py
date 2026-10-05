@@ -22,6 +22,7 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    broker_connection_retry_on_startup=True,
     # Rate limiting
     task_default_rate_limit="10/m",
 )
@@ -29,6 +30,10 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "parse-all-active-products": {
         "task": "app.tasks.parsing.parse_all_products",
+        "schedule": crontab(minute="*/30"),
+    },
+    "parse-all-active-categories": {
+        "task": "app.tasks.parsing.parse_all_categories",
         "schedule": crontab(minute="*/30"),
     },
     "check-alerts": {

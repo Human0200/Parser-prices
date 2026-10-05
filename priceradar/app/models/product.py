@@ -38,7 +38,11 @@ class TrackedProduct(Base):
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     marketplace: Mapped[Marketplace] = mapped_column(
-        Enum(Marketplace), nullable=False
+        Enum(
+            Marketplace,
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
     )
     external_id: Mapped[str] = mapped_column(String(100), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)

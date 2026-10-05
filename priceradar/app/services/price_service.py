@@ -6,7 +6,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.product import Marketplace, PriceHistory, TrackedProduct
-from app.models.user import PLAN_LIMITS, User
+from app.models.user import User
 from app.parsers import PARSERS
 from app.parsers.base import ParsedProduct
 
@@ -45,20 +45,11 @@ class PriceService:
         return result.scalar_one()
 
     async def can_add_product(self, user: User) -> bool:
-        current_count = await self.get_user_product_count(user.id)
-        limits = PLAN_LIMITS[user.subscription_plan]
-        return current_count < limits["max_products"]
+        return True
 
     async def add_product(
         self, user: User, url: str
     ) -> TrackedProduct:
-        if not await self.can_add_product(user):
-            limits = PLAN_LIMITS[user.subscription_plan]
-            raise ValueError(
-                f"Product limit reached ({limits['max_products']} "
-                f"for {user.subscription_plan.value} plan)"
-            )
-
         from app.parsers.base import BaseParser
 
         marketplace = BaseParser.detect_marketplace(url)

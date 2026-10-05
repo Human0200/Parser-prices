@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 from aiogram import F, Router
@@ -14,6 +16,7 @@ from app.bot.keyboards import (
     PRODUCTS_PER_PAGE,
     alert_type_keyboard,
     back_to_menu_keyboard,
+    category_actions_keyboard,
     confirm_delete_keyboard,
     main_menu_keyboard,
     product_actions_keyboard,
@@ -21,11 +24,15 @@ from app.bot.keyboards import (
 )
 from app.database import async_session_factory
 from app.models.user import User
+from app.parsers import detect_url_kind
+from app.services.category_service import CategoryService
 from app.services.price_service import PriceService
 
 logger = structlog.get_logger()
 
 router = Router(name="products")
+
+_MSK = ZoneInfo("Europe/Moscow")
 
 
 class AddProductStates(StatesGroup):
@@ -36,6 +43,14 @@ def _fmt_price(value: Decimal | None) -> str:
     if value is None:
         return "N/A"
     return f"{value:,.0f} \u20bd".replace(",", "\u202f")
+
+
+def _fmt_dt(value: datetime | None) -> str:
+    if value is None:
+        return "ещё не обновлялось"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo("UTC"))
+    return value.astimezone(_MSK).strftime("%d.%m.%Y %H:%M")
 
 
 def _trend_arrow(trend: float | None) -> str:
@@ -59,9 +74,8 @@ MARKETPLACE_LABELS: dict[str, str] = {
 async def cb_add_product(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AddProductStates.waiting_for_url)
     await callback.message.edit_text(
-        "\U0001f517 \u041e\u0442\u043f\u0440\u0430\u0432\u044c\u0442\u0435 \u0441\u0441\u044b\u043b\u043a\u0443 "
-        "\u043d\u0430 \u0442\u043e\u0432\u0430\u0440 \u0441 Wildberries, Ozon "
-        "\u0438\u043b\u0438 \u042f\u043d\u0434\u0435\u043a\u0441 \u041c\u0430\u0440\u043a\u0435\u0442.",
+        "🔗 Отправьте ссылку на товар <b>или категорию/поиск</b> "
+        "с Wildberries, Ozon или Яндекс Маркет.",
         reply_markup=back_to_menu_keyboard(),
         parse_mode="HTML",
     )
@@ -77,18 +91,18 @@ async def msg_product_url(message: Message, state: FSMContext) -> None:
 
     if not url.startswith("http"):
         await message.answer(
-            "\u274c \u041f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, "
-            "\u043e\u0442\u043f\u0440\u0430\u0432\u044c\u0442\u0435 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u0443\u044e "
-            "\u0441\u0441\u044b\u043b\u043a\u0443 \u043d\u0430 \u0442\u043e\u0432\u0430\u0440 "
-            "(\u043d\u0430\u0447\u0438\u043d\u0430\u044e\u0449\u0443\u044e\u0441\u044f \u0441 http).",
+            "❌ Пожалуйста, отправьте корректную ссылку "
+            "на товар или категорию (начинающуюся с http).",
             parse_mode="HTML",
         )
         return
 
     processing_msg = await message.answer(
-        "\u23f3 \u041e\u0431\u0440\u0430\u0431\u0430\u0442\u044b\u0432\u0430\u044e \u0441\u0441\u044b\u043b\u043a\u0443\u2026",
+        "⏳ Обрабатываю ссылку…",
         parse_mode="HTML",
     )
+
+    kind = detect_url_kind(url)
 
     async with async_session_factory() as session:
         from app.services.subscription_service import SubscriptionService
@@ -100,6 +114,85 @@ async def msg_product_url(message: Message, state: FSMContext) -> None:
             username=message.from_user.username,
         )
 
+        if kind == "listing":
+            cat_svc = CategoryService(session)
+            try:
+                category = await cat_svc.add_category(user, url)
+                await session.commit()
+            except ValueError as exc:
+                await session.rollback()
+                await processing_msg.edit_text(
+                    f"❌ Ошибка: {exc}",
+                    reply_markup=main_menu_keyboard(),
+                    parse_mode="HTML",
+                )
+                await state.clear()
+                return
+            except Exception as exc:
+                await session.rollback()
+                logger.exception("add_category_error", url=url)
+                from app.parsers.utils import BlockedError, ParserError
+
+                if isinstance(exc, BlockedError):
+                    msg = (
+                        "❌ Ozon заблокировал запрос (антибот).\n"
+                        "Попробуйте ещё раз через минуту или добавьте "
+                        "прокси в <code>PROXY_LIST</code> в .env."
+                    )
+                elif isinstance(exc, ParserError):
+                    msg = f"❌ Не удалось разобрать выдачу: {exc}"
+                else:
+                    msg = "❌ Не удалось разобрать категорию. Попробуйте позже."
+                await processing_msg.edit_text(
+                    msg,
+                    reply_markup=main_menu_keyboard(),
+                    parse_mode="HTML",
+                )
+                await state.clear()
+                return
+
+            mp = MARKETPLACE_LABELS.get(
+                category.marketplace.value, category.marketplace.value
+            )
+            price_str = _fmt_price(category.min_price)
+            lines = [
+                "✅ Категория добавлена!",
+                "",
+                f"📂 <b>{category.title}</b>",
+                f"🏪 {mp}",
+                f"📦 В выдаче: {category.item_count}",
+                f"💰 Мин. цена: {price_str}",
+                f"🕒 Обновлено: {_fmt_dt(category.last_parsed_at)}",
+            ]
+            if category.min_price_url:
+                title = category.min_price_title or "товар"
+                safe_title = (
+                    title.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                lines.append(
+                    f"🏷 <a href=\"{category.min_price_url}\">{safe_title}</a>"
+                )
+                lines.append(f"🔗 {category.min_price_url}")
+            await processing_msg.edit_text(
+                "\n".join(lines),
+                reply_markup=category_actions_keyboard(category.id),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            await state.clear()
+            return
+
+        if kind != "product":
+            await processing_msg.edit_text(
+                "❌ Не удалось распознать ссылку. "
+                "Нужна карточка товара или категория/поиск с фильтрами.",
+                reply_markup=main_menu_keyboard(),
+            )
+            await state.clear()
+            return
+
         price_svc = PriceService(session)
 
         try:
@@ -108,7 +201,7 @@ async def msg_product_url(message: Message, state: FSMContext) -> None:
         except ValueError as exc:
             await session.rollback()
             await processing_msg.edit_text(
-                f"\u274c \u041e\u0448\u0438\u0431\u043a\u0430: {exc}",
+                f"❌ Ошибка: {exc}",
                 reply_markup=main_menu_keyboard(),
                 parse_mode="HTML",
             )
@@ -118,30 +211,23 @@ async def msg_product_url(message: Message, state: FSMContext) -> None:
             await session.rollback()
             logger.exception("add_product_error", url=url)
             await processing_msg.edit_text(
-                "\u274c \u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c "
-                "\u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0442\u043e\u0432\u0430\u0440. "
-                "\u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0437\u0436\u0435.",
+                "❌ Не удалось добавить товар. Попробуйте позже.",
                 reply_markup=main_menu_keyboard(),
-                parse_mode="HTML",
             )
             await state.clear()
             return
 
-    await state.clear()
-
-    text = (
-        "\u2705 <b>\u0422\u043e\u0432\u0430\u0440 \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d!</b>\n\n"
-        f"\U0001f4e6 {product.title}\n"
-        f"\U0001f4b0 \u0426\u0435\u043d\u0430: {_fmt_price(product.current_price)}\n\n"
-        "\U0001f514 \u0425\u043e\u0442\u0438\u0442\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0438\u0442\u044c "
-        "\u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435 \u043e:"
-    )
-
-    await processing_msg.edit_text(
-        text,
-        reply_markup=alert_type_keyboard(product.id),
-        parse_mode="HTML",
-    )
+        mp = MARKETPLACE_LABELS.get(product.marketplace.value, product.marketplace.value)
+        await processing_msg.edit_text(
+            f"✅ Товар добавлен!\n\n"
+            f"<b>{product.title}</b>\n"
+            f"🏪 {mp}\n"
+            f"💰 {_fmt_price(product.current_price)}\n\n"
+            "🔔 Хотите настроить уведомление?",
+            reply_markup=alert_type_keyboard(product.id),
+            parse_mode="HTML",
+        )
+        await state.clear()
 
 
 @router.callback_query(F.data == "my_products")
@@ -240,6 +326,8 @@ async def cb_product_detail(callback: CallbackQuery) -> None:
         lines.append(
             f"\U0001f4ca \u041c\u0438\u043d. \u0437\u0430 30 \u0434\u043d.: {_fmt_price(min_price)}"
         )
+
+    lines.append(f"\U0001f552 \u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u043e: {_fmt_dt(product.price_updated_at)}")
 
     if product.url:
         lines.append(f"\n\U0001f517 <a href=\"{product.url}\">\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043d\u0430 \u0441\u0430\u0439\u0442\u0435</a>")
