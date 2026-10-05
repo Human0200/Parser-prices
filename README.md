@@ -1,189 +1,154 @@
+<p align="center">
+  <img src=".github/assets/banner.svg" width="100%" alt="PriceRadar" />
+</p>
+
 # PriceRadar
 
-🇷🇺 [Русский](#русский) | 🇬🇧 [English](#english)
+**Цены меняются. PriceRadar следит за ними.**
 
----
+MVP сервиса мониторинга Wildberries, Ozon и Яндекс Маркета: Telegram-бот, история цен, веб-дашборд и уведомления по правилам.
 
-## Русский
+[Запуск](#запуск-с-docker) · [Конфигурация](#конфигурация) · [Тарифы](#настройки-тарифов) · [Тесты](#тесты) · [English](#english)
 
-Мониторинг цен на Wildberries, Ozon и Яндекс Маркете с алертами в Telegram.
+## Возможности
 
-### Что умеет
+- **Три маркетплейса:** отдельные парсеры Wildberries, Ozon и Яндекс Маркета.
+- **Telegram-бот:** добавление товаров и управление уведомлениями.
+- **История цен:** графики, минимальная цена и динамика в веб-дашборде.
+- **Уведомления:** снижение или повышение цены, достижение целевой цены и возврат в наличие.
+- **Фоновые задачи:** обновление цен, проверка уведомлений и очистка истории через Celery.
+- **Free / Basic / Pro:** ограничения товаров, уведомлений и истории; интеграция подписок с YooKassa.
 
-- Парсит цены на WB, Ozon и Яндекс Маркете
-- Telegram-бот для добавления товаров и настройки алертов
-- Веб-дашборд с графиками
-- Алерты: снижение/повышение цены, целевая цена, возврат в наличие
-- Тарифы: Free / Basic / Pro
+## Стек
 
-### Стек
+Python 3.12 · FastAPI · SQLAlchemy 2 · PostgreSQL · Redis · Celery · aiogram 3 · Jinja2 / HTMX · httpx · Playwright · Alembic · Docker Compose.
 
-Python 3.12, FastAPI, SQLAlchemy 2.0, PostgreSQL, Redis, Celery, aiogram 3, Jinja2 + HTMX, httpx, Docker Compose
+## Запуск с Docker
 
-### Запуск
+Нужны Git, Docker с Compose, токен Telegram-бота и параметры YooKassa, которые требует текущая конфигурация.
+
+### 1. Подготовьте окружение
 
 ```bash
-cd priceradar
+git clone https://github.com/artemleonich/Parser-prices.git
+cd Parser-prices/priceradar
 cp .env.example .env
-# заполнить .env (токен бота, БД, etc.)
-
-docker compose up -d --build
-docker compose exec app alembic upgrade head
 ```
 
-Дашборд: http://localhost:8000/dashboard
-Бот: /start в Telegram
+Замените примеры в `.env`: `DB_PASSWORD` и пароль в обоих `DATABASE_URL`, токен и имя бота, параметры YooKassa и `SECRET_KEY`. Для `SECRET_KEY` нужен случайный секрет длиной не менее 32 символов. Значения `changeme` и `supersecretkey` отвергаются валидатором.
 
-### Без Docker
+### 2. Запустите БД и примените миграции
 
 ```bash
-cd priceradar
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
+docker compose up -d db redis
+docker compose run --rm app alembic upgrade head
+```
 
+### 3. Запустите приложение, бот и фоновые задачи
+
+```bash
+docker compose up -d --build
+```
+
+Дашборд: [localhost:8000/dashboard](http://localhost:8000/dashboard). Страницы требуют авторизации; её обработчик расположен в [app/api/auth.py](priceradar/app/api/auth.py). В настроенном Telegram-боте отправьте `/start`.
+
+Compose запускает приложение с `--reload` и монтирует исходники — это окружение для разработки. Для публичного сервиса нужно отдельно подготовить развёртывание и проверить авторизацию, платежи и поведение парсеров.
+
+## Конфигурация
+
+Примеры — в [priceradar/.env.example](priceradar/.env.example), проверка параметров — в [app/config.py](priceradar/app/config.py).
+
+| Переменная | Назначение |
+| --- | --- |
+| `DATABASE_URL` / `DATABASE_URL_SYNC` | Асинхронное подключение приложения / миграции |
+| `DB_PASSWORD` | Пароль PostgreSQL в Compose |
+| `REDIS_URL` | Брокер и хранилище результатов Celery |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_USERNAME` | Telegram-бот |
+| `YUKASSA_SHOP_ID` / `YUKASSA_SECRET_KEY` | Интеграция оплаты |
+| `SECRET_KEY` | Секрет приложения |
+| `BASE_URL` | Адрес приложения |
+| `PROXY_LIST` | Необязательный список прокси через запятую |
+
+```dotenv
+PROXY_LIST=http://user1:pass@proxy1:8080,http://user2:pass@proxy2:8080
+```
+
+Парсеры работают с внешними площадками: изменение API, HTML или блокировки могут потребовать их обновления.
+
+## Настройки тарифов
+
+Значения ниже заданы в [models/user.py](priceradar/app/models/user.py), [config.py](priceradar/app/config.py) и [subscription_service.py](priceradar/app/services/subscription_service.py). Это конфигурация MVP.
+
+| Параметр | Free | Basic | Pro |
+| --- | --- | --- | --- |
+| Цена за 30 дней в коде | 0 ₽ | 990 ₽ | 2 490 ₽ |
+| Товары | 5 | 50 | 200 |
+| Маркетплейсы | 1 | 3 | 3 |
+| История | 7 дней | 30 дней | 90 дней |
+| Уведомления | 3 | 20 | 999 999 |
+| Минимальный интервал в конфигурации | 2 часа | 30 минут | 15 минут |
+
+Планировщик сейчас отбирает товары **раз в 30 минут**, поэтому настройка Pro «15 минут» сама по себе не обеспечивает обновление с такой частотой. Очистка истории использует общий предел Pro — 90 дней.
+
+## Запуск без Docker
+
+Установите Python 3.12, PostgreSQL и Redis. В `.env` замените имена Compose-хостов `db` и `redis` на адреса своих сервисов.
+
+Из каталога `priceradar`:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+alembic upgrade head
+```
+
+Запустите каждый процесс в отдельном терминале с тем же окружением:
+
+```bash
 uvicorn app.main:app --reload --port 8000
 celery -A app.tasks.celery_app worker -l info -c 4
 celery -A app.tasks.celery_app beat -l info
 python -m app.bot.main
 ```
 
-### Тесты
+## Тесты
+
+В активированном Python-окружении из каталога `priceradar`:
 
 ```bash
-cd priceradar
-pytest tests/ -v
+TESTING=1 python -m pytest tests/ -v
 ```
 
-### Структура
+Тестовый режим использует синтетическую конфигурацию; проверки сервисов работают с SQLite в памяти. Он не заменяет проверку реальных маркетплейсов и платежей.
 
-```
+## Структура
+
+```text
 priceradar/
 ├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── database.py
-│   ├── models/
-│   ├── schemas/
-│   ├── api/
-│   ├── parsers/
-│   ├── tasks/
-│   ├── bot/
-│   ├── services/
-│   ├── templates/
-│   └── static/
-├── alembic/
-├── tests/
+│   ├── api/          HTTP API и дашборд
+│   ├── bot/          Telegram-бот
+│   ├── parsers/      парсеры маркетплейсов
+│   ├── tasks/        задачи Celery и расписание
+│   ├── services/     цены, уведомления и подписки
+│   ├── models/       модели SQLAlchemy
+│   ├── schemas/      схемы API
+│   ├── templates/    веб-страницы
+│   └── static/       стили
+├── alembic/          миграции БД
+├── tests/            парсеры и сервисы
 ├── docker-compose.yml
 ├── Dockerfile
 └── requirements.txt
 ```
-
-### Тарифы
-
-| | Free | Basic (990 руб/мес) | Pro (2490 руб/мес) |
-|---|---|---|---|
-| Товаров | 5 | 50 | 200 |
-| Обновление | 2 ч | 30 мин | 15 мин |
-| Маркетплейсы | 1 | 3 | 3 |
-| История | 7 дн | 30 дн | 90 дн |
-| Алерты | 3 | 20 | unlim |
-
-### Прокси
-
-```
-PROXY_LIST=http://user1:pass@proxy1:8080,http://user2:pass@proxy2:8080
-```
-
----
 
 ## English
 
-Price monitoring for Wildberries, Ozon, and Yandex Market with Telegram alerts.
+PriceRadar is an MVP for marketplace price monitoring with a Telegram bot, price-history dashboard, configurable alerts, and subscription tiers. It uses FastAPI, PostgreSQL, Redis, Celery, aiogram, and Docker Compose.
 
-### Features
+Clone the repository, enter `priceradar`, copy `.env.example`, and replace its placeholder credentials. Start `db` and `redis`, apply Alembic migrations, then start all Compose services using the commands above. The dashboard requires authentication. Unit tests run with `TESTING=1 python -m pytest tests/ -v`.
 
-- Parses prices on WB, Ozon, and Yandex Market
-- Telegram bot for adding products and configuring alerts
-- Web dashboard with charts
-- Alerts: price drop/increase, target price, back in stock
-- Plans: Free / Basic / Pro
+Plan intervals are configuration values: the current scheduler runs every 30 minutes, including the Pro tier. Marketplace parsers and public deployment need separate validation.
 
-### Tech Stack
-
-Python 3.12, FastAPI, SQLAlchemy 2.0, PostgreSQL, Redis, Celery, aiogram 3, Jinja2 + HTMX, httpx, Docker Compose
-
-### Getting Started
-
-```bash
-cd priceradar
-cp .env.example .env
-# fill in .env (bot token, DB, etc.)
-
-docker compose up -d --build
-docker compose exec app alembic upgrade head
-```
-
-Dashboard: http://localhost:8000/dashboard
-Bot: /start in Telegram
-
-### Without Docker
-
-```bash
-cd priceradar
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-
-uvicorn app.main:app --reload --port 8000
-celery -A app.tasks.celery_app worker -l info -c 4
-celery -A app.tasks.celery_app beat -l info
-python -m app.bot.main
-```
-
-### Tests
-
-```bash
-cd priceradar
-pytest tests/ -v
-```
-
-### Project Structure
-
-```
-priceradar/
-├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── database.py
-│   ├── models/
-│   ├── schemas/
-│   ├── api/
-│   ├── parsers/
-│   ├── tasks/
-│   ├── bot/
-│   ├── services/
-│   ├── templates/
-│   └── static/
-├── alembic/
-├── tests/
-├── docker-compose.yml
-├── Dockerfile
-└── requirements.txt
-```
-
-### Plans
-
-| | Free | Basic ($10/mo) | Pro ($25/mo) |
-|---|---|---|---|
-| Products | 5 | 50 | 200 |
-| Update interval | 2 h | 30 min | 15 min |
-| Marketplaces | 1 | 3 | 3 |
-| History | 7 days | 30 days | 90 days |
-| Alerts | 3 | 20 | unlim |
-
-### Proxy
-
-```
-PROXY_LIST=http://user1:pass@proxy1:8080,http://user2:pass@proxy2:8080
-```
